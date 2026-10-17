@@ -10,6 +10,7 @@ import { TripSearchForm } from "@/components/trip-search-form";
 import { Card, Chip, Container, EmptyState, LinkButton, Skeleton } from "@/components/ui/primitives";
 import { getViewer } from "@/lib/auth";
 import { siteUrl } from "@/lib/env";
+import { geocode, isInPhilippines } from "@/lib/geocode";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getI18n } from "@/lib/i18n/server";
 import { stepLabels as getStepLabels } from "@/lib/labels";
@@ -21,17 +22,31 @@ export const metadata: Metadata = { title: "Route search" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.trim() ?? "";
 
-type Resolved = { place: PlaceRef | null; alternatives: PlaceRef[] };
+type Resolved = { place: PlaceRef | null; alternatives: PlaceRef[]; fromMap: boolean };
 
-async function resolvePlace(supabase: SupabaseClient, id: string, text: string): Promise<Resolved> {
+/**
+ * Turn what the user picked/typed into a point:
+ * 1. a Sakay place id, 2. coordinates of a map place they picked,
+ * 3. the best Sakay match for the text, 4. the best OpenStreetMap match.
+ */
+async function resolvePlace(supabase: SupabaseClient, id: string, text: string, lat: number, lng: number): Promise<Resolved> {
   if (UUID.test(id)) {
     const { data } = await supabase.from("places").select("id, name, lat, lng, kind, city").eq("id", id).maybeSingle();
-    if (data) return { place: data as PlaceRef, alternatives: [] };
+    if (data) return { place: data as PlaceRef, alternatives: [], fromMap: false };
   }
-  if (text.length < 2) return { place: null, alternatives: [] };
+  if (Number.isFinite(lat) && Number.isFinite(lng) && isInPhilippines(lat, lng)) {
+    return { place: { id: "", name: text || "Selected place", lat, lng }, alternatives: [], fromMap: true };
+  }
+  if (text.length < 2) return { place: null, alternatives: [], fromMap: false };
   const { data } = await supabase.rpc("search_places", { p_query: text, p_limit: 5 });
-  const list = (data ?? []) as PlaceRef[];
-  return { place: list[0] ?? null, alternatives: list.slice(1) };
+  const list = (data ?? []) as (PlaceRef & { score: number })[];
+  // A strong Sakay match (the name contains what was typed) wins outright.
+  // A weak one ("Puregold Malolos" vs "Malolos Crossing") loses to an exact map match.
+  if (list.length && list[0].score >= 0.6) return { place: list[0], alternatives: list.slice(1), fromMap: false };
+  const map = await geocode(text, { limit: 4, signal: AbortSignal.timeout(4000), userAgent: `Sakay (${siteUrl()})` });
+  if (!map.length) return list.length ? { place: list[0], alternatives: list.slice(1), fromMap: false } : { place: null, alternatives: [], fromMap: false };
+  const [first, ...rest] = map.map((m) => ({ id: "", name: m.city && !m.name.includes(m.city) ? `${m.name}, ${m.city}` : m.name, lat: m.lat, lng: m.lng }));
+  return { place: first, alternatives: [...list.slice(0, 2), ...rest].slice(0, 4), fromMap: true };
 }
 
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
@@ -57,15 +72,18 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   }
 
   const [origin, destination] = await Promise.all([
-    resolvePlace(supabase, one(sp.fromId), fromText),
-    resolvePlace(supabase, one(sp.toId), toText),
+    resolvePlace(supabase, one(sp.fromId), fromText, Number(one(sp.fromLat) || NaN), Number(one(sp.fromLng) || NaN)),
+    resolvePlace(supabase, one(sp.toId), toText, Number(one(sp.toLat) || NaN), Number(one(sp.toLng) || NaN)),
   ]);
 
   let trips: Trip[] = [];
   let widened = false;
-  if (origin.place && destination.place && origin.place.id !== destination.place.id) {
+  const samePlace = origin.place && destination.place && origin.place.lat === destination.place.lat && origin.place.lng === destination.place.lng;
+  if (origin.place && destination.place && !samePlace) {
+    const o = origin.place;
+    const d = destination.place;
     const find = (radius: number) =>
-      supabase.rpc("find_trips", { p_origin: origin.place!.id, p_destination: destination.place!.id, p_max_legs: 4, p_limit: 8, p_radius: radius });
+      supabase.rpc("find_trips_at", { p_from_lat: o.lat, p_from_lng: o.lng, p_to_lat: d.lat, p_to_lng: d.lng, p_max_legs: 4, p_limit: 8, p_radius: radius });
     trips = ((await find(500)).data ?? []) as Trip[];
     // Town names ("Malolos", "Hagonoy") often point at a landmark that isn't the
     // terminal itself; look for stops up to 2 km away before giving up.
@@ -87,8 +105,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   // Related questions for this trip (also the duplicate-question check).
   const { data: similar } = await supabase.rpc("similar_questions", {
     p_title: `${fromText} to ${toText}`,
-    p_origin: origin.place?.id ?? null,
-    p_destination: destination.place?.id ?? null,
+    p_origin: origin.place?.id || null,
+    p_destination: destination.place?.id || null,
     p_limit: 4,
   });
   const related = (similar ?? []) as { id: string; title: string; answer_count: number; has_best_answer: boolean }[];
@@ -98,8 +116,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
     await supabase.rpc("log_search", {
       p_origin_text: fromText,
       p_destination_text: toText,
-      p_origin: origin.place?.id ?? null,
-      p_destination: destination.place?.id ?? null,
+      p_origin: origin.place?.id || null,
+      p_destination: destination.place?.id || null,
       p_result_count: trips.length,
     });
   });
@@ -107,14 +125,25 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   const fromName = origin.place?.name ?? fromText;
   const toName = destination.place?.name ?? toText;
   const shareParams = new URLSearchParams({ from: fromName, to: toName });
-  if (origin.place) shareParams.set("fromId", origin.place.id);
-  if (destination.place) shareParams.set("toId", destination.place.id);
+  for (const [side, r] of [["from", origin], ["to", destination]] as const) {
+    if (r.place?.id) shareParams.set(`${side}Id`, r.place.id);
+    else if (r.place) {
+      shareParams.set(`${side}Lat`, String(r.place.lat));
+      shareParams.set(`${side}Lng`, String(r.place.lng));
+    }
+  }
   const askParams = new URLSearchParams(shareParams);
+  for (const k of ["fromLat", "fromLng", "toLat", "toLng"]) askParams.delete(k);
 
   const altLink = (which: "from" | "to", p: PlaceRef) => {
     const q = new URLSearchParams(shareParams);
     q.set(which, p.name);
-    q.set(which === "from" ? "fromId" : "toId", p.id);
+    for (const k of ["Id", "Lat", "Lng"]) q.delete(`${which}${k}`);
+    if (p.id) q.set(`${which}Id`, p.id);
+    else {
+      q.set(`${which}Lat`, String(p.lat));
+      q.set(`${which}Lng`, String(p.lng));
+    }
     return `/search?${q.toString()}`;
   };
 
@@ -126,8 +155,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
           <TripSearchForm
             compact
             key={`${fromText}|${toText}`}
-            initialFrom={{ text: fromName, place: origin.place }}
-            initialTo={{ text: toName, place: destination.place }}
+            initialFrom={{ text: fromName, place: origin.place ? { ...origin.place, source: origin.fromMap ? "map" : "sakay" } : null }}
+            initialTo={{ text: toName, place: destination.place ? { ...destination.place, source: destination.fromMap ? "map" : "sakay" } : null }}
           />
         </Card>
 
@@ -177,6 +206,9 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
               />
               <FilterToggle param="accessible" label={t("search.accessibleOnly")} />
             </div>
+            {origin.fromMap || destination.fromMap ? (
+              <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800 ring-1 ring-brand-200">{t("search.fromMap")}</p>
+            ) : null}
             {widened ? (
               <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{t("search.widened")}</p>
             ) : null}

@@ -669,3 +669,27 @@ describe("bug report: Malolos / Hagonoy -> SM Megamall found nothing", () => {
     assert.ok(trips.length > 0);
   });
 });
+
+describe("trip search from any map point (places not in Sakay yet)", () => {
+  // "National Shrine of Saint Anne, Hagonoy" as returned by the OpenStreetMap geocoder.
+  const shrine = { lat: 14.8348794, lng: 120.7342181 };
+  const megamall = { lat: 14.5848, lng: 121.0565 };
+
+  it("finds Hagonoy church -> Megamall from raw coordinates", async () => {
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at($1, $2, $3, $4, 4, 8, 500) as t`, [shrine.lat, shrine.lng, megamall.lat, megamall.lng]);
+    assert.ok(trips.length > 0);
+    assert.equal(((trips[0].legs as Json[])[0].from as Json).name, "Hagonoy (Town Proper / Public Market)");
+    assert.ok(Number(trips[0].walk_m) > 0, "includes the walk from the church to the jeep stop");
+  });
+
+  it("matches the place-id version exactly", async () => {
+    const [{ t: byId }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2, 4, 8, 500) as t`, [sampleId("hagonoy"), sampleId("megamall")]);
+    const [{ t: byPoint }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(14.8340, 120.7330, 14.5848, 121.0565, 4, 8, 500) as t`);
+    assert.deepEqual(byPoint, byId);
+  });
+
+  it("returns nothing for points outside the Philippines", async () => {
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(40.7, -74.0, 14.58, 121.05) as t`);
+    assert.deepEqual(trips, []);
+  });
+});

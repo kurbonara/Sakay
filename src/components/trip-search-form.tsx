@@ -43,6 +43,15 @@ export function TripSearchForm({
     const toId = String(data.get("to_id") ?? "");
     if (fromId) params.set("fromId", fromId);
     if (toId) params.set("toId", toId);
+    // Places picked from the map (not in Sakay yet) travel as coordinates.
+    for (const side of ["from", "to"] as const) {
+      const lat = String(data.get(`${side}_lat`) ?? "");
+      const lng = String(data.get(`${side}_lng`) ?? "");
+      if (!data.get(`${side}_id`) && lat && lng) {
+        params.set(`${side}Lat`, lat);
+        params.set(`${side}Lng`, lng);
+      }
+    }
     rememberSearch({ from: fromText, to: toText, fromId, toId });
     startTransition(() => router.push(`/search?${params.toString()}`));
   }

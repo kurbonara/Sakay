@@ -202,6 +202,13 @@ export function RouteForm({ initial, routeId, modeLabels = MODE_LABEL }: { initi
   );
 }
 
+/** Routes need real stops, so a place picked from the map is saved as a (pending) Sakay place first. */
+async function addMapPlace(p: PlaceOption): Promise<PlaceOption | { error: string }> {
+  if (p.lat == null || p.lng == null) return { error: "That place has no map location." };
+  const res = await suggestPlace({ name: p.name, kind: p.kind ?? "landmark", lat: p.lat, lng: p.lng, city: p.city ?? undefined });
+  return res.ok ? { ...p, id: res.id, source: "sakay" } : { error: res.message };
+}
+
 function LegEditor({
   index,
   leg,
@@ -255,11 +262,11 @@ function LegEditor({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <PlaceAutocomplete name={`leg${index}_from`} label="Pickup point (from)" placeholder="Landmark, stop or terminal" defaultValue={leg.from} onSelect={(p) => onChange({ from: p })} />
+          <PlaceAutocomplete name={`leg${index}_from`} label="Pickup point (from)" placeholder="Landmark, stop or terminal" defaultValue={leg.from} onSelect={(p) => onChange({ from: p })} onPickMap={addMapPlace} />
           <NewPlaceButton onCreated={(p) => onChange({ from: p })} />
         </div>
         <div>
-          <PlaceAutocomplete name={`leg${index}_to`} label="Drop-off point (to)" placeholder="Where you get off" defaultValue={leg.to} onSelect={(p) => onChange({ to: p })} />
+          <PlaceAutocomplete name={`leg${index}_to`} label="Drop-off point (to)" placeholder="Where you get off" defaultValue={leg.to} onSelect={(p) => onChange({ to: p })} onPickMap={addMapPlace} />
           <NewPlaceButton onCreated={(p) => onChange({ to: p })} />
         </div>
       </div>

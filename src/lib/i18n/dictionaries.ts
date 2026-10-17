@@ -62,6 +62,7 @@ export const en = {
     accessibleOnly: "Accessible routes only",
     share: "Share these results",
     enterBoth: "Enter both where you're coming from and where you're going.",
+    fromMap: "Some of your places aren't in Sakay yet, so we used their map location (OpenStreetMap) and the nearest stops with known routes.",
     widened: "No route starts or ends right at the places you picked, so these trips use the nearest stops (up to 2 km away). Check the walking or tricycle part at the start and end.",
   },
   route: {
@@ -320,6 +321,7 @@ export const fil: Dictionary = {
     accessibleOnly: "Accessible na ruta lang",
     share: "I-share ang resulta",
     enterBoth: "Ilagay kung saan ka manggagaling at saan ka pupunta.",
+    fromMap: "Wala pa sa Sakay ang ilan sa mga lugar mo, kaya ginamit namin ang lokasyon nila sa mapa (OpenStreetMap) at ang pinakamalapit na sakayang may ruta.",
     widened: "Walang rutang nagsisimula o nagtatapos mismo sa napili mo, kaya ginamit ang pinakamalapit na sakayan (hanggang 2 km). Tingnan ang lakad o tricycle sa simula at dulo.",
   },
   route: {

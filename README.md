@@ -262,6 +262,12 @@ public/sw.js           Offline service worker
 vercel.json            Vercel region (keep it next to your Supabase region)
 ```
 
+### Map data and outside services
+
+- **Place search** covers the whole Philippines. Sakay's own places come first; anything else comes from OpenStreetMap through the free [Photon](https://photon.komoot.io) geocoder. A search from a map place uses its coordinates (`find_trips_at`) and connects to the nearest stops that have routes. When someone submits a route using a map place, it's saved as a new (unverified) Sakay place.
+- **Road-following lines** come from the free OpenStreetMap routing server (OSRM). They're stored with each route when it's saved, and cached in the browser for older routes.
+- Both are free community services with fair-use limits. If Sakay gets busy, set `NEXT_PUBLIC_GEOCODER_URL` / `NEXT_PUBLIC_ROUTING_URL` to your own servers (see `.env.example`).
+
 ### About the sample data
 
 `…_sample_data.sql` adds real Metro Manila landmarks and stations with approximate coordinates, plus 19 **sample routes** so the app isn't empty on day one. Sample routes show a "Sample · please verify" badge. Their fares and times are estimates; the community confirms or reports them, and moderators can edit or archive them under **Admin → Routes**. Editing a sample route removes its badge.
