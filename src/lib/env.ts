@@ -2,7 +2,8 @@
 // time, so they must be referenced literally (process.env.NEXT_PUBLIC_X).
 
 export class MissingEnvError extends Error {
-  constructor(public missing: string[]) {
+  missing: string[];
+  constructor(missing: string[]) {
     super(
       `Missing ${missing.join(", ")} in .env.local. ` +
         `Copy .env.example to .env.local, paste the values from your Supabase dashboard ` +
@@ -10,12 +11,24 @@ export class MissingEnvError extends Error {
         `On Vercel, add the same variables under Project → Settings → Environment Variables and redeploy.`,
     );
     this.name = "MissingEnvError";
+    this.missing = missing;
   }
 }
 
+/**
+ * Accepts the Project URL the way people actually paste it: with spaces, a
+ * trailing slash, or the REST endpoint copied by mistake
+ * ("https://x.supabase.co/rest/v1/"). The Supabase client adds /rest/v1 itself.
+ */
+export function normalizeSupabaseUrl(raw: string | undefined): string | undefined {
+  const v = raw?.trim().replace(/^["']|["']$/g, "");
+  if (!v) return undefined;
+  return v.replace(/\/+$/, "").replace(/\/(rest|auth|realtime|storage)\/v1$/i, "").replace(/\/+$/, "");
+}
+
 export function supabaseEnv(): { url: string; key: string } {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const key = (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)?.trim();
   const missing: string[] = [];
   if (!url) missing.push("NEXT_PUBLIC_SUPABASE_URL");
   if (!key) missing.push("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");

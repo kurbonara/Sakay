@@ -50,6 +50,7 @@ export function PlaceAutocomplete({
   const [active, setActive] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emptyFor, setEmptyFor] = useState<string | null>(null);
   const requestId = useRef(0);
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
@@ -75,7 +76,9 @@ export function PlaceAutocomplete({
         const { data, error: rpcError } = await createClient().rpc("search_places", { p_query: q, p_limit: 8 });
         if (current !== requestId.current) return;
         if (rpcError) throw rpcError;
-        setOptions((data ?? []) as PlaceOption[]);
+        const list = (data ?? []) as PlaceOption[];
+        setOptions(list);
+        setEmptyFor(list.length ? null : q);
         setError(null);
         setActive(0);
       } catch {
@@ -94,7 +97,8 @@ export function PlaceAutocomplete({
     onSelectRef.current?.(place);
   };
 
-  const showList = open && text.trim().length >= 2 && (options.length > 0 || loading || error);
+  const noMatch = !loading && !error && options.length === 0 && emptyFor === text.trim();
+  const showList = open && text.trim().length >= 2 && (options.length > 0 || loading || error || noMatch);
 
   return (
     <div className="relative">
@@ -145,6 +149,11 @@ export function PlaceAutocomplete({
         <ul id={`${id}-list`} role="listbox" className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-xl bg-white py-1 shadow-lg ring-1 ring-slate-200">
           {loading && !options.length ? <li className="px-3 py-2 text-sm text-slate-500">Searching…</li> : null}
           {error ? <li className="px-3 py-2 text-sm text-rose-700">{error}</li> : null}
+          {noMatch ? (
+            <li className="px-3 py-2 text-sm text-slate-600">
+              No place called &ldquo;{text.trim()}&rdquo; yet. Try a nearby mall, school, church or terminal. You can still search with what you typed.
+            </li>
+          ) : null}
           {options.map((o, i) => {
             const Icon = (o.kind && KIND_ICON[o.kind]) || MapPin;
             return (
