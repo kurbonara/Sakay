@@ -62,9 +62,17 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   ]);
 
   let trips: Trip[] = [];
+  let widened = false;
   if (origin.place && destination.place && origin.place.id !== destination.place.id) {
-    const { data } = await supabase.rpc("find_trips", { p_origin: origin.place.id, p_destination: destination.place.id, p_max_legs: 4, p_limit: 8 });
-    trips = (data ?? []) as Trip[];
+    const find = (radius: number) =>
+      supabase.rpc("find_trips", { p_origin: origin.place!.id, p_destination: destination.place!.id, p_max_legs: 4, p_limit: 8, p_radius: radius });
+    trips = ((await find(500)).data ?? []) as Trip[];
+    // Town names ("Malolos", "Hagonoy") often point at a landmark that isn't the
+    // terminal itself; look for stops up to 2 km away before giving up.
+    if (!trips.length) {
+      trips = ((await find(2000)).data ?? []) as Trip[];
+      widened = trips.length > 0;
+    }
   }
 
   // Accessibility filter: every route used by the trip must be marked friendly.
@@ -169,6 +177,9 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
               />
               <FilterToggle param="accessible" label={t("search.accessibleOnly")} />
             </div>
+            {widened ? (
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">{t("search.widened")}</p>
+            ) : null}
             <PendingResults
               fallback={
                 <div className="grid gap-5 lg:grid-cols-2">

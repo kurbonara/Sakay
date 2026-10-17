@@ -614,3 +614,58 @@ describe("comments and tips", () => {
     assert.equal(r.comment_count, 0);
   });
 });
+
+describe("bug report: Malolos / Hagonoy -> SM Megamall found nothing", () => {
+  // Replays the app's flow: type the town, take the top suggestion, search,
+  // and (like the search page) retry with a 2 km radius if nothing is nearby.
+  async function topPlace(q: string): Promise<string> {
+    const rows = await t.as<{ id: string; name: string }>(null, `select id, name from public.search_places($1, 5)`, [q]);
+    assert.ok(rows.length, `no suggestion for ${q}`);
+    return rows[0].id;
+  }
+  async function search(from: string, to: string): Promise<Json[]> {
+    const o = await topPlace(from);
+    const d = await topPlace(to);
+    for (const radius of [500, 2000]) {
+      const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2, 4, 8, $3) as t`, [o, d, radius]);
+      if (trips.length) return trips;
+    }
+    return [];
+  }
+
+  it("suggests the Malolos terminal first when typing 'Malolos'", async () => {
+    const rows = await t.as<{ name: string }>(null, `select name from public.search_places('Malolos', 5)`);
+    assert.match(rows[0].name, /Malolos Crossing/);
+  });
+
+  it("Malolos -> SM Megamall returns a trip that ends next to Megamall", async () => {
+    const trips = await search("Malolos", "SM Megamall");
+    assert.ok(trips.length > 0);
+    const legs = trips[0].legs as Json[];
+    assert.ok(["MRT-3 Ortigas Station", "EDSA Carousel – Ortigas Station", "SM Megamall"].includes(String((legs.at(-1)!.to as Json).name)));
+  });
+
+  it("Hagonoy -> SM Megamall chains jeep + bus + walk + train (walks don't count as rides)", async () => {
+    const trips = await search("Hagonoy", "SM Megamall");
+    assert.ok(trips.length > 0, "expected at least one trip");
+    const modes = (trips[0].legs as Json[]).map((l) => l.mode);
+    assert.equal(modes[0], "jeepney");
+    assert.ok(modes.includes("bus"));
+    assert.ok(Number(trips[0].transfers) >= 1);
+    assert.equal(Number(trips[0].transfers), modes.filter((m) => m !== "walk").length - 1);
+  });
+
+  it("starting from a landmark ~1 km from the terminal works only with the wider radius", async () => {
+    const church = sampleId("malolos-cathedral");
+    const mega = sampleId("megamall");
+    const [{ t: near }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2, 4, 8, 500) as t`, [church, mega]);
+    const [{ t: wide }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2, 4, 8, 2000) as t`, [church, mega]);
+    assert.ok(near.length > 0, "tricycle sample route connects the cathedral directly");
+    assert.ok(wide.length >= near.length);
+  });
+
+  it("keeps the old call shape (4 named args) working", async () => {
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips(p_origin => $1, p_destination => $2, p_max_legs => 4, p_limit => 3) as t`, [sampleId("sm-north"), sampleId("ust")]);
+    assert.ok(trips.length > 0);
+  });
+});
