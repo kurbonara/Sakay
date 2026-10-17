@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-500: #2563eb;
+  --color-brand-600: #1d4ed8;
+  --color-brand-700: #1e40af;
+  --color-brand-900: #172554;
+  --color-sun-300: #fcd34d;
+  --color-sun-400: #fbbf24;
+  --color-sun-500: #f59e0b;
+}
+
+:root {
+  color-scheme: light;
+  --background: #f6f7fb;
+  --foreground: #0f172a;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  overflow-x: hidden;
+}
+
+/* Let grid/flex children shrink so long text (signboards, links) wraps instead of widening the page on phones. */
+.grid > * {
+  min-width: 0;
+}
+
+/* Leaflet tiles look washed out with some global img rules; keep them crisp. */
+.leaflet-container {
+  font: inherit;
+  z-index: 0;
+}
+.leaflet-container img {
+  max-width: none;
+}
+
+.sakay-pin {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+@keyframes sakay-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  animation: sakay-pulse 1.4s ease-in-out infinite;
+  background: #e2e8f0;
+  border-radius: 0.5rem;
+}
+
+dialog::backdrop {
+  background: rgb(15 23 42 / 0.45);
+}
+
+@media print {
+  .no-print, header, footer, nav[aria-label="Primary"] {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .print-break {
+    break-inside: avoid;
+  }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 10px;
+  }
+}
