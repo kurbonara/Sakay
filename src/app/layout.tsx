@@ -55,7 +55,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Advisories
               </Link>
               <a href="https://www.openstreetmap.org/copyright" className="hover:text-slate-800" rel="noreferrer" target="_blank">
-                Map data © OpenStreetMap
+                Map &amp; route data © OpenStreetMap (ODbL)
               </a>
             </nav>
           </Container>

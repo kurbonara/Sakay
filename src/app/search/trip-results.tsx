@@ -21,8 +21,8 @@ export function TripResults({ trips, discounted, stepLabels }: { trips: Trip[]; 
         {trips.map((tr, i) => {
           const active = i === selected;
           const rides = tr.legs.filter((l) => l.mode !== "walk");
-          const routeIds = new Set(tr.legs.map((l) => l.route_id));
-          const confirmations = Math.max(0, ...tr.legs.map((l) => l.still_accurate_count));
+          const routeIds = new Set(rides.map((l) => l.route_id ?? `osm:${l.line_id}`));
+          const confirmations = Math.max(0, ...tr.legs.map((l) => l.still_accurate_count ?? 0));
           const sample = tr.legs.some((l) => l.is_sample);
           // Walking between stops isn't a "transfer" for commuters; changing vehicles is.
           const transfers = Math.max(0, rides.length - 1);
@@ -43,13 +43,20 @@ export function TripResults({ trips, discounted, stepLabels }: { trips: Trip[]; 
                         ))}
                       </div>
                       <p className="mt-2 text-sm text-slate-600">
-                        {tr.single_route_id ? t("search.directRoute") : t("search.combined", { n: routeIds.size })}
+                        {tr.single_route_id
+                          ? t("search.directRoute")
+                          : routeIds.size === 1
+                            ? (rides[0]?.route_title ?? t("search.directRoute"))
+                            : t("search.combined", { n: routeIds.size })}
                         {" · "}
                         {transfers ? t("search.transfers", { n: transfers }) : t("search.noTransfer")}
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-xl font-bold text-slate-900">{peso(discounted ? tr.fare_discounted : tr.fare)}</p>
+                      <p className="text-xl font-bold text-slate-900">
+                        {tr.estimated ? "≈" : ""}
+                        {peso(discounted ? tr.fare_discounted : tr.fare, t.lang)}
+                      </p>
                       <p className="text-sm text-slate-500">{duration(tr.minutes, t.lang)}</p>
                     </div>
                   </div>
@@ -68,6 +75,7 @@ export function TripResults({ trips, discounted, stepLabels }: { trips: Trip[]; 
                       <ThumbsUp className="size-3.5" aria-hidden /> {confirmations}
                     </span>
                     {sample ? <Chip tone="amber">{t("route.sample")}</Chip> : null}
+                    {tr.estimated ? <Chip tone="slate">{t("search.estimatedChip")}</Chip> : null}
                     <ChevronDown className={cx("ml-auto size-4 transition", active && "rotate-180")} aria-hidden />
                   </div>
                 </button>
@@ -77,7 +85,11 @@ export function TripResults({ trips, discounted, stepLabels }: { trips: Trip[]; 
                       lang={t.lang}
                       discounted={discounted}
                       labels={stepLabels}
-                      legs={tr.legs.map((l) => ({ ...l, route: tr.single_route_id ? null : { id: l.route_id, title: l.route_title } }))}
+                      legs={tr.legs.map((l) => ({
+                        ...l,
+                        route: tr.single_route_id || !l.route_id ? null : { id: l.route_id, title: l.route_title ?? "" },
+                        osm: l.source === "osm" && l.line_id ? { id: l.line_id, title: l.route_title ?? "" } : null,
+                      }))}
                     />
                     <p className="mt-3 text-xs text-slate-500">{t("route.approx")}</p>
                     {tr.single_route_id ? (

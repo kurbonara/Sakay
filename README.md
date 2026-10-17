@@ -268,6 +268,22 @@ vercel.json            Vercel region (keep it next to your Supabase region)
 - **Road-following lines** come from the free OpenStreetMap routing server (OSRM). They're stored with each route when it's saved, and cached in the browser for older routes.
 - Both are free community services with fair-use limits. If Sakay gets busy, set `NEXT_PUBLIC_GEOCODER_URL` / `NEXT_PUBLIC_ROUTING_URL` to your own servers (see `.env.example`).
 
+### Imported transit lines (OpenStreetMap)
+
+About 1,500 bus, jeepney, UV Express, train and ferry lines across the Philippines are imported from OpenStreetMap into `transit_lines` / `transit_line_points`. The trip engine (`find_trips_at`) lets riders board and alight anywhere along these lines, except on expressways (and only at stations for trains and ferries). It chains up to 3 rides with walks of up to 600 m between them. Fares and times for imported lines are **estimates** from LTFRB fare matrices and are labelled as such. Community routes keep their exact fares.
+
+To refresh the data (e.g. every few months):
+
+```bash
+curl -L -o philippines.osm.pbf https://download.geofabrik.de/asia/philippines-latest.osm.pbf
+python3 -m pip install osmium
+python3 scripts/osm-transit/fetch_pbf.py philippines.osm.pbf   # ~2 minutes
+node scripts/osm-transit/build.ts                               # writes new migrations
+git add -A && git commit -m "Refresh OpenStreetMap transit lines" && git push
+```
+
+(`scripts/osm-transit/fetch.ts` does the same through the Overpass API without downloading the 600 MB file, but the public servers are often overloaded.) Data © OpenStreetMap contributors, ODbL. Keep the attribution in the footer and on imported legs.
+
 ### About the sample data
 
 `…_sample_data.sql` adds real Metro Manila landmarks and stations with approximate coordinates, plus 19 **sample routes** so the app isn't empty on day one. Sample routes show a "Sample · please verify" badge. Their fares and times are estimates; the community confirms or reports them, and moderators can edit or archive them under **Admin → Routes**. Editing a sample route removes its badge.

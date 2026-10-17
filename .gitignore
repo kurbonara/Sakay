@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# OpenStreetMap transit download cache (re-creatable)
+/scripts/osm-transit/.cache/

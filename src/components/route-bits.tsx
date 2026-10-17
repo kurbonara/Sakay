@@ -141,6 +141,9 @@ type StepLeg = {
   from: PlaceRef;
   to: PlaceRef;
   route?: { id: string; title: string } | null;
+  /** imported OpenStreetMap line (shown with attribution) */
+  osm?: { id: number; title: string } | null;
+  estimated?: boolean;
 };
 
 export type StepLabels = {
@@ -157,6 +160,8 @@ export type StepLabels = {
   walkFrom: string;
   walkTo: string;
   sayPara: string;
+  estimatedFare: string;
+  osmLine: string;
 };
 
 /** Step-by-step directions. */
@@ -180,7 +185,10 @@ export function LegSteps({ legs, labels, discounted, lang }: { legs: StepLeg[]; 
                   <span className="text-slate-400">{i + 1}.</span> {labels.actions[leg.mode]}
                   <span className="font-normal text-slate-500"> · {duration(leg.minutes, lang)}</span>
                 </p>
-                <p className="text-sm font-semibold text-slate-800">{peso(fare, lang)}</p>
+                <p className="text-sm font-semibold text-slate-800" title={leg.estimated ? labels.estimatedFare : undefined}>
+                  {leg.estimated && fare > 0 ? "≈" : ""}
+                  {peso(fare, lang)}
+                </p>
               </div>
               {leg.signboard ? (
                 <p className="mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-slate-900 px-2.5 py-1 font-mono text-xs font-bold uppercase tracking-wide text-sun-300">
@@ -211,6 +219,16 @@ export function LegSteps({ legs, labels, discounted, lang }: { legs: StepLeg[]; 
                   From: {leg.route.title}
                 </Link>
               ) : null}
+              {leg.osm ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {labels.osmLine}:{" "}
+                  <a href={`https://www.openstreetmap.org/relation/${leg.osm.id}`} target="_blank" rel="noreferrer" className="font-medium text-brand-700 hover:underline">
+                    {leg.osm.title}
+                  </a>{" "}
+                  · © OpenStreetMap contributors
+                </p>
+              ) : null}
+              {leg.estimated && leg.mode !== "walk" ? <p className="mt-0.5 text-xs text-amber-700">{labels.estimatedFare}</p> : null}
             </div>
           </li>
         );

@@ -95,12 +95,20 @@ export type RouteDetail = RouteSummary & {
   legs: RouteLeg[];
 };
 
-/** One leg of a trip returned by the find_trips RPC. */
+/** One leg of a trip returned by the find_trips / find_trips_at RPCs. */
 export type TripLeg = {
   leg_id: string;
-  route_id: string;
-  route_title: string;
+  /** community = a Sakay route; osm = an imported OpenStreetMap line; walk = walking between rides */
+  source: "community" | "osm" | "walk";
+  route_id: string | null;
+  line_id: number | null;
+  route_title: string | null;
+  ref?: string | null;
+  operator?: string | null;
+  fare_text?: string | null;
   is_sample: boolean;
+  /** true when the fare/time come from the LTFRB fare matrix, not from riders */
+  estimated: boolean;
   still_accurate_count: number;
   outdated_count: number;
   mode: TransportMode;
@@ -109,6 +117,7 @@ export type TripLeg = {
   fare: number;
   fare_discounted: number;
   minutes: number;
+  distance_m?: number;
   path: [number, number][] | null;
   from: PlaceRef;
   to: PlaceRef;
@@ -120,6 +129,7 @@ export type Trip = {
   minutes: number;
   walk_m: number;
   transfers: number;
+  estimated?: boolean;
   single_route_id: string | null;
   legs: TripLeg[];
 };

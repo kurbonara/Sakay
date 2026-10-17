@@ -53,5 +53,7 @@ export async function stepLabels(): Promise<StepLabels> {
     walkFrom: t("steps.walkFrom"),
     walkTo: t("steps.walkTo"),
     sayPara: t("steps.sayPara"),
+    estimatedFare: t("search.estimatedFare"),
+    osmLine: t("search.osmLine"),
   };
 }

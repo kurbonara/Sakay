@@ -543,14 +543,23 @@ describe("trip finder", () => {
     assert.equal(direct.single_route_id, S("route:smnorth-up"));
   });
 
-  it("chains rides across routes with a walking transfer (MRT-3 -> LRT-2 at Cubao)", async () => {
+  it("chains rides across routes with a walking transfer (SM North -> UST)", async () => {
     const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2) as t`, [S("sm-north"), S("ust")]);
-    assert.ok(trips.length >= 1);
+    assert.ok(trips.length > 0);
     const legs = trips[0].legs as Json[];
-    const names = legs.map((l) => (l.to as Json).name);
-    assert.ok(names.includes("LRT-2 Legarda Station"), JSON.stringify(names));
+    assert.ok(Number(trips[0].transfers) >= 1);
+    const rides = legs.filter((l) => l.mode !== "walk");
+    assert.equal(rides.length, Number(trips[0].transfers) + 1);
     assert.ok(Number(trips[0].fare) > 0);
     assert.ok(Number(trips[0].fare_discounted) < Number(trips[0].fare));
+  });
+
+  it("bug report: Calumpit -> Bulacan State University finds the MacArthur Highway jeep", async () => {
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2) as t`, [S("calumpit"), S("bulsu")]);
+    assert.ok(trips.length > 0);
+    const first = (trips[0].legs as Json[]).filter((l) => l.mode !== "walk");
+    assert.equal(first[0].mode, "jeepney");
+    assert.equal(trips[0].transfers, 0);
   });
 
   it("ignores pending and archived routes", async () => {
@@ -561,7 +570,8 @@ describe("trip finder", () => {
   });
 
   it("returns an empty list when nothing connects", async () => {
-    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2) as t`, [S("alabang"), S("riverbanks")]);
+    // Batanes: no lines anywhere near.
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(20.45, 121.97, 20.40, 121.95) as t`);
     assert.deepEqual(trips, []);
   });
 });
@@ -678,18 +688,119 @@ describe("trip search from any map point (places not in Sakay yet)", () => {
   it("finds Hagonoy church -> Megamall from raw coordinates", async () => {
     const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at($1, $2, $3, $4, 4, 8, 500) as t`, [shrine.lat, shrine.lng, megamall.lat, megamall.lng]);
     assert.ok(trips.length > 0);
-    assert.equal(((trips[0].legs as Json[])[0].from as Json).name, "Hagonoy (Town Proper / Public Market)");
-    assert.ok(Number(trips[0].walk_m) > 0, "includes the walk from the church to the jeep stop");
+    const legs = trips[0].legs as Json[];
+    assert.equal(legs[0].mode, "walk", "starts with the walk from the church");
+    assert.equal(((legs[1] as Json).from as Json).name, "Hagonoy (Town Proper / Public Market)");
+    assert.ok(Number(trips[0].walk_m) > 0);
   });
 
   it("matches the place-id version exactly", async () => {
     const [{ t: byId }] = await t.as<{ t: Json[] }>(null, `select public.find_trips($1, $2, 4, 8, 500) as t`, [sampleId("hagonoy"), sampleId("megamall")]);
     const [{ t: byPoint }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(14.8340, 120.7330, 14.5848, 121.0565, 4, 8, 500) as t`);
-    assert.deepEqual(byPoint, byId);
+    const rides = (trips: Json[]) => trips.map((tr) => (tr.legs as Json[]).filter((l) => l.mode !== "walk").map((l) => l.leg_id));
+    assert.deepEqual(rides(byPoint), rides(byId));
   });
 
   it("returns nothing for points outside the Philippines", async () => {
     const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(40.7, -74.0, 14.58, 121.05) as t`);
     assert.deepEqual(trips, []);
+  });
+});
+
+describe("trip engine with imported (OpenStreetMap) lines", () => {
+  // Google encoded polyline, same as scripts/osm-transit/build.ts
+  function encode(points: [number, number][]): string {
+    let out = "";
+    let pLat = 0;
+    let pLng = 0;
+    const enc = (v: number) => {
+      let x = v < 0 ? ~(v << 1) : v << 1;
+      let s = "";
+      while (x >= 0x20) {
+        s += String.fromCharCode((0x20 | (x & 0x1f)) + 63);
+        x >>= 5;
+      }
+      return s + String.fromCharCode(x + 63);
+    };
+    for (const [la, ln] of points) {
+      const a = Math.round(la * 1e5);
+      const b = Math.round(ln * 1e5);
+      out += enc(a - pLat) + enc(b - pLng);
+      pLat = a;
+      pLng = b;
+    }
+    return out;
+  }
+  // Straight-ish line from A to B with a point every ~200 m.
+  function line(a: [number, number], b: [number, number]): [number, number][] {
+    const n = Math.max(2, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.0018));
+    return Array.from({ length: n + 1 }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n] as [number, number]);
+  }
+  async function load(id: number, mode: string, name: string, pts: [number, number][], opts: { board?: [number, boolean][]; stops?: [number, string][]; stopsOnly?: boolean; roads?: [number, string][] } = {}) {
+    await t.sql(
+      `select private.load_transit_line($1, $2::public.transport_mode, $3, null, null, null, null, null, null, false, false, $4, null, $5, $6::jsonb, $7::jsonb, $8::jsonb)`,
+      [id, mode, name, opts.stopsOnly ?? false, encode(pts), JSON.stringify(opts.board ?? []), JSON.stringify(opts.roads ?? [[0, "MacArthur Highway"]]), JSON.stringify(opts.stops ?? [])],
+    );
+  }
+
+  // Far from all sample data: a made-up corridor in Northern Luzon.
+  const A: [number, number] = [16.0, 120.4];
+  const B: [number, number] = [16.1, 120.4]; // ~11 km north
+  const C: [number, number] = [16.1, 120.5]; // ~11 km east of B
+
+  before(async () => {
+    await load(990001, "jeepney", "Test Jeep A–B", line(A, B));
+    await load(990002, "bus", "Test Bus B–C", line(B, C));
+    // Express bus: the middle 80% is expressway (no boarding there).
+    const pts = line([16.0, 120.6], [16.1, 120.6]);
+    const n = pts.length;
+    await load(990003, "bus", "Test Express", pts, { board: [[0, true], [Math.round(n * 0.1), false], [Math.round(n * 0.9), true]] });
+    // Train: stations only at both ends.
+    const rail = line([16.0, 120.7], [16.1, 120.7]);
+    await load(990004, "train", "Test Rail", rail, { stopsOnly: true, stops: [[0, "South Station"], [rail.length - 1, "North Station"]] });
+  });
+
+  it("boards anywhere along a jeep line and estimates the LTFRB fare", async () => {
+    // Start 3 km up the line, end 2 km before its end: no stop is mapped there.
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(16.027, 120.4005, 16.082, 120.4005) as t`);
+    assert.ok(trips.length > 0);
+    const ride = (trips[0].legs as Json[]).find((l) => l.mode !== "walk")!;
+    assert.equal(ride.source, "osm");
+    assert.equal(ride.estimated, true);
+    const km = Number(ride.distance_m) / 1000;
+    assert.ok(km > 5.5 && km < 6.8, `ride ${km} km`);
+    assert.equal(Number(ride.fare), Math.round(13 + (km - 4) * 1.8));
+    assert.equal((ride.from as Json).name, "MacArthur Highway");
+    assert.ok(Array.isArray(ride.path) && (ride.path as unknown[]).length > 10, "draws the real line shape");
+  });
+
+  it("changes lines with a short walk (jeep then bus)", async () => {
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(16.01, 120.4, 16.1, 120.49) as t`);
+    assert.ok(trips.length > 0);
+    const rides = (trips[0].legs as Json[]).filter((l) => l.mode !== "walk").map((l) => l.route_title);
+    assert.deepEqual(rides, ["Test Jeep A–B", "Test Bus B–C"]);
+    assert.equal(trips[0].transfers, 1);
+  });
+
+  it("never boards in the middle of an expressway", async () => {
+    // Origin right next to the expressway middle, destination near its end: you'd have to board on the expressway.
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(16.05, 120.6, 16.099, 120.6, 3, 8, 600) as t`);
+    assert.ok(!trips.some((tr) => (tr.legs as Json[]).some((l) => l.route_title === "Test Express")));
+  });
+
+  it("only uses trains at stations", async () => {
+    const [{ t: mid }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(16.05, 120.7, 16.1, 120.7, 3, 8, 600) as t`);
+    assert.ok(!mid.some((tr) => (tr.legs as Json[]).some((l) => l.route_title === "Test Rail")), "no boarding between stations");
+    const [{ t: ok }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(16.0005, 120.7, 16.0995, 120.7, 3, 8, 600) as t`);
+    const ride = (ok[0].legs as Json[]).find((l) => l.mode === "train")!;
+    assert.equal((ride.from as Json).name, "South Station");
+    assert.equal((ride.to as Json).name, "North Station");
+  });
+
+  it("returns nothing (fast) where no line passes", async () => {
+    const t0 = Date.now();
+    const [{ t: trips }] = await t.as<{ t: Json[] }>(null, `select public.find_trips_at(20.45, 121.97, 20.40, 121.95) as t`);
+    assert.deepEqual(trips, []);
+    assert.ok(Date.now() - t0 < 2000);
   });
 });

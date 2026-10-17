@@ -10,6 +10,7 @@ import { TripSearchForm } from "@/components/trip-search-form";
 import { Card, Chip, Container, EmptyState, LinkButton, Skeleton } from "@/components/ui/primitives";
 import { getViewer } from "@/lib/auth";
 import { siteUrl } from "@/lib/env";
+import { duration } from "@/lib/format";
 import { geocode, isInPhilippines } from "@/lib/geocode";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getI18n } from "@/lib/i18n/server";
@@ -49,6 +50,20 @@ async function resolvePlace(supabase: SupabaseClient, id: string, text: string, 
   return { place: first, alternatives: [...list.slice(0, 2), ...rest].slice(0, 4), fromMap: true };
 }
 
+async function roadDistance(a: PlaceRef, b: PlaceRef): Promise<{ meters: number } | null> {
+  const base = (process.env.NEXT_PUBLIC_ROUTING_URL || "https://routing.openstreetmap.de").replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${base}/routed-car/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`, {
+      signal: AbortSignal.timeout(4000),
+      headers: { "User-Agent": `Sakay (${siteUrl()})` },
+    });
+    const data = (await res.json()) as { code?: string; routes?: { distance: number }[] };
+    return data.code === "Ok" && data.routes?.[0] ? { meters: data.routes[0].distance } : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
   const sp = await searchParams;
   const fromText = one(sp.from);
@@ -83,8 +98,18 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
     const o = origin.place;
     const d = destination.place;
     const find = (radius: number) =>
-      supabase.rpc("find_trips_at", { p_from_lat: o.lat, p_from_lng: o.lng, p_to_lat: d.lat, p_to_lng: d.lng, p_max_legs: 4, p_limit: 8, p_radius: radius });
-    trips = ((await find(500)).data ?? []) as Trip[];
+      supabase.rpc("find_trips_at", {
+        p_from_lat: o.lat,
+        p_from_lng: o.lng,
+        p_to_lat: d.lat,
+        p_to_lng: d.lng,
+        p_max_legs: 3,
+        p_limit: 8,
+        p_radius: radius,
+        p_from_name: o.name,
+        p_to_name: d.name,
+      });
+    trips = ((await find(600)).data ?? []) as Trip[];
     // Town names ("Malolos", "Hagonoy") often point at a landmark that isn't the
     // terminal itself; look for stops up to 2 km away before giving up.
     if (!trips.length) {
@@ -96,10 +121,27 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
   // Accessibility filter: every route used by the trip must be marked friendly.
   let shown = trips;
   if (accessibleOnly && trips.length) {
-    const ids = [...new Set(trips.flatMap((tr) => tr.legs.map((l) => l.route_id)))];
-    const { data } = await supabase.from("routes").select("id, pwd_friendly, senior_friendly").in("id", ids);
+    // Only community routes carry accessibility info; imported lines count as unknown (not shown).
+    const ids = [...new Set(trips.flatMap((tr) => tr.legs.filter((l) => l.route_id).map((l) => l.route_id!)))];
+    const { data } = ids.length ? await supabase.from("routes").select("id, pwd_friendly, senior_friendly").in("id", ids) : { data: [] };
     const ok = new Set((data ?? []).filter((r) => r.pwd_friendly || r.senior_friendly).map((r) => r.id));
-    shown = trips.filter((tr) => tr.legs.every((l) => ok.has(l.route_id)));
+    shown = trips.filter((tr) => tr.legs.every((l) => l.mode === "walk" || (l.route_id !== null && ok.has(l.route_id))));
+  }
+
+  // Nothing mapped at all: give a rough road-based estimate instead of a dead end.
+  let rough: { km: number; minLow: number; minHigh: number; fareLow: number; fareHigh: number } | null = null;
+  if (!trips.length && origin.place && destination.place) {
+    const road = await roadDistance(origin.place, destination.place);
+    if (road) {
+      const km = road.meters / 1000;
+      rough = {
+        km: Math.round(km * 10) / 10,
+        minLow: Math.round((km / 18) * 60 + 5),
+        minHigh: Math.round((km / 12) * 60 + 15),
+        fareLow: Math.round(13 + Math.max(0, km - 4) * 1.8),
+        fareHigh: Math.round(15 + Math.max(0, km - 4) * 2.65),
+      };
+    }
   }
 
   // Related questions for this trip (also the duplicate-question check).
@@ -229,8 +271,16 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
               ) : (
                 <EmptyState
                   icon={<MapPinOff className="size-8" />}
-                  title={t("search.noResults")}
-                  body={t("search.noResultsBody")}
+                  title={rough ? t("search.roughTitle") : t("search.noResults")}
+                  body={
+                    rough
+                      ? t("search.roughBody", {
+                          km: rough.km,
+                          min: `${duration(rough.minLow, lang)}–${duration(rough.minHigh, lang)}`,
+                          fare: `₱${rough.fareLow}–₱${rough.fareHigh}`,
+                        })
+                      : t("search.noResultsBody")
+                  }
                   action={
                     <LinkButton href={`/questions/ask?${askParams.toString()}`} variant="primary">
                       <MessageCircleQuestion className="size-4" /> {t("search.askThis")}
