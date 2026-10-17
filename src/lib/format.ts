@@ -1,8 +1,8 @@
 import { TIME_ZONE } from "@/lib/env";
 
-export function peso(amount: number | string | null | undefined): string {
+export function peso(amount: number | string | null | undefined, lang: "en" | "fil" = "en"): string {
   const n = Number(amount ?? 0);
-  if (n === 0) return "Free";
+  if (n === 0) return lang === "fil" ? "Libre" : "Free";
   return `₱${Number.isInteger(n) ? n : n.toFixed(2)}`;
 }
 

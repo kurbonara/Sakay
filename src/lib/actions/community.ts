@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getViewer } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
+import { withRoadPaths } from "@/lib/road-paths-server";
 import type { ActionState, ContentType, PlaceKind, ReportReason } from "@/lib/types";
 
 const SIGN_IN = "Please sign in first.";
@@ -32,14 +33,16 @@ export type RouteDraft = {
     fare?: number | string;
     fare_discounted?: number | string | null;
     minutes: number | string;
+    path?: [number, number][] | null;
   }[];
 };
+
 
 export async function submitRoute(draft: RouteDraft): Promise<ActionState> {
   const { supabase, userId, isStaff } = await getViewer();
   if (!userId) return { ok: false, message: SIGN_IN };
   if (!draft.title || draft.title.trim().length < 5) return { ok: false, message: "Give the route a title (at least 5 characters)." };
-  const { data, error } = await supabase.rpc("submit_route", { p_route: draft });
+  const { data, error } = await supabase.rpc("submit_route", { p_route: await withRoadPaths(supabase, draft) });
   if (error) return { ok: false, message: friendlyError(error) };
   return done(
     isStaff ? "Route published." : "Thanks! Your route was sent to the moderators. You'll see it under Account → My submissions.",

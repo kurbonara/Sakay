@@ -5,6 +5,7 @@ import { getViewer } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
 import { fromLocalInput } from "@/lib/format";
 import type { ActionState, ContentType, ReportStatus, RpcResult, UserRole } from "@/lib/types";
+import { withRoadPaths } from "@/lib/road-paths-server";
 import type { RouteDraft } from "./community";
 
 // Every function here calls a database function that re-checks the caller's
@@ -33,7 +34,8 @@ export async function moderateRoute(_: ActionState, formData: FormData): Promise
 }
 
 export async function adminUpdateRoute(routeId: string, draft: RouteDraft): Promise<ActionState> {
-  return staffRpc("admin_update_route", { p_route_id: routeId, p_route: draft }, "Route updated.");
+  const { supabase } = await getViewer();
+  return staffRpc("admin_update_route", { p_route_id: routeId, p_route: await withRoadPaths(supabase, draft) }, "Route updated.");
 }
 
 export async function resolveReport(_: ActionState, formData: FormData): Promise<ActionState> {

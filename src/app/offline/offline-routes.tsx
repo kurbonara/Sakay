@@ -50,7 +50,7 @@ export function OfflineRoutesList() {
             {r.legs.map((l, i) => (
               <li key={i} className="rounded-xl bg-slate-50 p-2.5">
                 <p className="font-medium text-slate-900">
-                  {i + 1}. {en.modes[l.mode]} · {l.from.name} → {l.to.name}
+                  {i + 1}. {en.steps[l.mode]} · {l.from.name} → {l.to.name}
                 </p>
                 {l.signboard ? <p className="font-mono text-xs font-bold uppercase text-slate-700">Signboard: {l.signboard}</p> : null}
                 {l.instructions ? <p className="text-slate-600">{l.instructions}</p> : null}

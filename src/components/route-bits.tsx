@@ -143,7 +143,21 @@ type StepLeg = {
   route?: { id: string; title: string } | null;
 };
 
-export type StepLabels = { modes: Record<TransportMode, string>; signboard: string; from: string; to: string; ride: string; walk: string };
+export type StepLabels = {
+  modes: Record<TransportMode, string>;
+  /** "Sumakay ng jeep" / "Ride a jeep" … */
+  actions: Record<TransportMode, string>;
+  signboard: string;
+  from: string;
+  to: string;
+  ride: string;
+  walk: string;
+  getOn: string;
+  getOff: string;
+  walkFrom: string;
+  walkTo: string;
+  sayPara: string;
+};
 
 /** Step-by-step directions. */
 export function LegSteps({ legs, labels, discounted, lang }: { legs: StepLeg[]; labels: StepLabels; discounted?: boolean; lang: "en" | "fil" }) {
@@ -163,10 +177,10 @@ export function LegSteps({ legs, labels, discounted, lang }: { legs: StepLeg[]; 
             <div className="min-w-0 flex-1 pb-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <p className="font-semibold text-slate-900">
-                  {leg.mode === "walk" ? labels.walk : `${labels.ride} ${labels.modes[leg.mode]}`}
+                  <span className="text-slate-400">{i + 1}.</span> {labels.actions[leg.mode]}
                   <span className="font-normal text-slate-500"> · {duration(leg.minutes, lang)}</span>
                 </p>
-                <p className="text-sm font-semibold text-slate-800">{peso(fare)}</p>
+                <p className="text-sm font-semibold text-slate-800">{peso(fare, lang)}</p>
               </div>
               {leg.signboard ? (
                 <p className="mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-slate-900 px-2.5 py-1 font-mono text-xs font-bold uppercase tracking-wide text-sun-300">
@@ -174,11 +188,24 @@ export function LegSteps({ legs, labels, discounted, lang }: { legs: StepLeg[]; 
                   <span className="truncate">{leg.signboard}</span>
                 </p>
               ) : null}
-              <p className="mt-1.5 text-sm text-slate-700">
-                <span className="text-slate-500">{labels.from}</span> {leg.from.name} <span className="text-slate-400">→</span>{" "}
-                <span className="text-slate-500">{labels.to}</span> {leg.to.name}
-              </p>
+              {leg.mode === "walk" ? (
+                <p className="mt-1.5 text-sm text-slate-700">
+                  <span className="text-slate-500">{labels.walkFrom}</span> {leg.from.name} <span className="text-slate-500">{labels.walkTo}</span> {leg.to.name}
+                </p>
+              ) : (
+                <div className="mt-1.5 space-y-0.5 text-sm text-slate-700">
+                  <p>
+                    <span className="font-medium text-emerald-700">{labels.getOn}</span> {leg.from.name}
+                  </p>
+                  <p>
+                    <span className="font-medium text-rose-700">{labels.getOff}</span> {leg.to.name}
+                  </p>
+                </div>
+              )}
               {leg.instructions ? <p className="mt-1 text-sm text-slate-600">{leg.instructions}</p> : null}
+              {leg.mode === "jeepney" || leg.mode === "tricycle" || leg.mode === "uv_express" ? (
+                <p className="mt-1 text-xs text-slate-500">{labels.sayPara}</p>
+              ) : null}
               {leg.route ? (
                 <Link href={`/routes/${leg.route.id}`} className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline">
                   From: {leg.route.title}

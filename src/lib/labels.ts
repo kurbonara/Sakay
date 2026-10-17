@@ -39,5 +39,19 @@ export async function stepLabels(): Promise<StepLabels> {
     to: t("route.to"),
     ride: t("route.ride"),
     walk: t("route.walk"),
+    actions: {
+      jeepney: t("steps.jeepney"),
+      bus: t("steps.bus"),
+      uv_express: t("steps.uv_express"),
+      tricycle: t("steps.tricycle"),
+      train: t("steps.train"),
+      ferry: t("steps.ferry"),
+      walk: t("steps.walk"),
+    },
+    getOn: t("steps.getOn"),
+    getOff: t("steps.getOff"),
+    walkFrom: t("steps.walkFrom"),
+    walkTo: t("steps.walkTo"),
+    sayPara: t("steps.sayPara"),
   };
 }
